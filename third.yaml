@@ -1,0 +1,99 @@
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '14'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run static code analysis
+      uses: sonarcloud/github-action@v2
+      with:
+        organization: 'your-org'
+        projectKey: 'your-project-key'
+        token: ${{ secrets.SONAR_TOKEN }}
+
+    - name: Run tests
+      run: npm test
+
+    - name: Build application
+      run: npm run build
+
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: ./build
+
+    - name: Check for vulnerabilities
+      uses: snyk/actions/node@v1
+      with:
+        args: test
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '14'
+
+    - name: Deploy to server
+      id: deploy
+      run: |
+        echo "Deploying to server..."
+        # Add your deployment script or commands here
+        echo "Deployment URL: https://example.com"  # Replace with actual deployment URL
+        echo "::set-output name=deployment-url::https://example.com"
+
+    - name: Notify deployment success
+      run: |
+        curl -X POST -H 'Content-type: application/json' \
+        --data '{"text":"Deployment successful! Check it out: https://example.com"}' \
+        ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Post-deployment health check
+      run: |
+        curl --fail https://example.com/health-check || exit 1
+
+    - name: Scan deployment artifacts
+      uses: anchore/scan-action@v1
+      with:
+        image-ref: 'your-image-reference'
+        username: ${{ secrets.ANCHORE_USERNAME }}
+        password: ${{ secrets.ANCHORE_PASSWORD }}
+
+    - name: Perform security checks
+      run: |
+        # Example: Check for exposed secrets in the deployment
+        curl -s https://example.com | grep -Eo 'secret=.*' && exit 1 || exit 0
